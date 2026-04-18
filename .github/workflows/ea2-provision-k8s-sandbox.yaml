@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: 0.0.0.0/0
+      k8s_api_cidr_ipv4:
+        description: CIDR origen hacia API K3s/kubectl (6443). Debe incluir tu IP si usas kubectl desde tu PC sin tunel SSH.
+        required: false
+        type: string
+        default: 0.0.0.0/0
       k8s_stack:
         description: Qué instalar vía SSH tras crear la MV
         required: false
@@ -67,6 +72,11 @@ on:
         default: t3.small
       ssh_cidr_ipv4:
         description: CIDR origen SSH
+        required: true
+        type: string
+        default: 0.0.0.0/0
+      k8s_api_cidr_ipv4:
+        description: CIDR origen API K3s (6443); kubectl desde fuera necesita llegar aqui o usar tunel SSH.
         required: true
         type: string
         default: 0.0.0.0/0
@@ -135,6 +145,7 @@ jobs:
           TF_VAR_aws_region: ${{ inputs.aws_region }}
           TF_VAR_instance_type: ${{ inputs.instance_type }}
           TF_VAR_ssh_cidr_ipv4: ${{ inputs.ssh_cidr_ipv4 }}
+          TF_VAR_k8s_api_cidr_ipv4: ${{ inputs.k8s_api_cidr_ipv4 }}
         run: terraform apply -auto-approve
 
       - name: Capturar salidas Terraform (IP + usuario SSH)
@@ -176,7 +187,8 @@ jobs:
           REMOTE='ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/ea2_lab.pem '"${SSH_USER}"'@'"$PUBLIC_IP"
 
           if [ "$STACK" = "k3s" ]; then
-            $REMOTE 'curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -'
+            # --tls-san IP publica: si no, kubectl desde fuera falla x509 (cert valid for 127.0.0.1, not EC2 elastic IP).
+            $REMOTE "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=\"--write-kubeconfig-mode 644 --tls-san ${PUBLIC_IP}\" sh -"
             $REMOTE 'sudo kubectl get nodes || true'
             KUB="sudo kubectl"
           elif [ "$STACK" = "minikube" ]; then
@@ -228,6 +240,7 @@ jobs:
             echo ""
             if [ "$STACK" = "k3s" ]; then
               echo "Kubeconfig en el servidor: \`/etc/rancher/k3s/k3s.yaml\` (sustituir 127.0.0.1 por la IP pública si lo copias a tu máquina)."
+              echo "K3s se instalo con \`--tls-san ${PUBLIC_IP}\` para que el certificado TLS acepte kubectl contra https://${PUBLIC_IP}:6443."
             elif [ "$STACK" = "minikube" ]; then
               echo "En el servidor: \`sudo minikube kubectl --\` o \`sudo cat ~/.kube/config\` según perfil de minikube."
             fi

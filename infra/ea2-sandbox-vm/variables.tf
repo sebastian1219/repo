@@ -20,6 +20,12 @@ variable "ssh_cidr_ipv4" {
   default     = "0.0.0.0/0"
 }
 
+variable "k8s_api_cidr_ipv4" {
+  type        = string
+  description = "CIDR desde el que se permite la API de Kubernetes/K3s (6443/tcp). kubectl desde tu PC necesita esto o un tunel SSH."
+  default     = "0.0.0.0/0"
+}
+
 variable "k8s_nodeport_min" {
   type        = number
   description = "Puerto mínimo NodePort a abrir (académico)"

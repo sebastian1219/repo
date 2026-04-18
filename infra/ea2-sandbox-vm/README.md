@@ -1,6 +1,8 @@
 # EA2 — MV sandbox + K8s (Terraform)
 
-Módulo mínimo para **una EC2** en el **VPC por defecto**, security group con **SSH** y rango **NodePort**, y `aws_key_pair` generado a partir de la **clave pública** derivada en CI desde `EA2_SSH_PRIVATE_KEY`.
+Módulo mínimo para **una EC2** en el **VPC por defecto**, security group con **SSH**, **6443/tcp (API K3s/kubectl)** y rango **NodePort**, y `aws_key_pair` generado a partir de la **clave pública** derivada en CI desde `EA2_SSH_PRIVATE_KEY`.
+
+Variables `ssh_cidr_ipv4` y `k8s_api_cidr_ipv4` restringen origen (por defecto `0.0.0.0/0` en sandbox; para producción usar tu IP/`32`).
 
 - **State:** solo en el runner de GitHub Actions (no backend remoto).
 - **Destrucción:** el sandbox de credenciales caduca (~3 h); no dependemos de `terraform destroy` aquí.

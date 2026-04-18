@@ -31,7 +31,7 @@ data "aws_vpc" "default" {
 resource "aws_security_group" "lab" {
   name        = "ea2-lab-sg-${random_id.suffix.hex}"
   # AWS exige ASCII en GroupDescription (sin tildes ni guiones tipograficos).
-  description = "EA2 lab: SSH + NodePort range (academic sandbox)"
+  description = "EA2 lab: SSH + K8s API + NodePort range (academic sandbox)"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
@@ -40,6 +40,15 @@ resource "aws_security_group" "lab" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = [var.ssh_cidr_ipv4]
+  }
+
+  # Sin esta regla, kubectl desde fuera de la VM hace timeout contra https://IP:6443 (solo habia SSH y NodePorts).
+  ingress {
+    description = "Kubernetes API (K3s kube-apiserver)"
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    cidr_blocks = [var.k8s_api_cidr_ipv4]
   }
 
   ingress {
