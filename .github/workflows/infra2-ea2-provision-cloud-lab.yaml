@@ -161,6 +161,7 @@ jobs:
           set -euo pipefail
           for i in $(seq 1 40); do
             if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes \
               -o ConnectTimeout=10 -o BatchMode=yes -i ~/.ssh/ea2_lab.pem "ubuntu@${IP}" 'echo ok'; then
               exit 0
             fi
@@ -176,6 +177,7 @@ jobs:
           set -euo pipefail
           for i in $(seq 1 40); do
             if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes \
               -o ConnectTimeout=10 -o BatchMode=yes -i ~/.ssh/ea2_lab.pem "ubuntu@${IP}" 'echo ok'; then
               exit 0
             fi
@@ -199,6 +201,7 @@ jobs:
         run: |
           set -euo pipefail
           scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=120 \
             -i ~/.ssh/ea2_lab.pem \
             "ubuntu@${SERVER_PUB}:/etc/rancher/k3s/k3s.yaml" ./k3s.yaml
           sed -i "s/127.0.0.1/${SERVER_PUB}/g" ./k3s.yaml
