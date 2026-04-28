@@ -1,3 +1,25 @@
+data "aws_caller_identity" "current" {}
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# Misma resolucion que infra/ea2-sandbox-vm (ea2-provision-k8s-sandbox.yaml).
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"]
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
 resource "random_id" "suffix" {
   byte_length = 4
 }
@@ -8,7 +30,7 @@ resource "random_password" "db_master" {
 }
 
 locals {
-  azs = var.availability_zones
+  azs = slice(data.aws_availability_zones.available.names, 0, 2)
 
   vpc_cidr = "10.${var.vpc_octet}.0.0/16"
 
