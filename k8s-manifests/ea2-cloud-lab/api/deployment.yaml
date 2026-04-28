@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ea2-api
+  labels:
+    app: ea2-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ea2-api
+  template:
+    metadata:
+      labels:
+        app: ea2-api
+    spec:
+      imagePullSecrets:
+        - name: ecr-pull
+      containers:
+        - name: api
+          image: REPLACE_ECR_IMAGE
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: ea2-rds-credentials

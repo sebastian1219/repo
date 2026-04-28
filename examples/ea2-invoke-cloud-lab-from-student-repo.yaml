@@ -1,0 +1,30 @@
+# Copiar a .github/workflows/<nombre>.yaml en el repo del alumno.
+# Ajustar ORG/USER y ref (@EA2 o @main).
+#
+# Secretos:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   EA2_SSH_PRIVATE_KEY  (PEM; misma pareja que usa Terraform en CI)
+# Opcional (AWS Academy / sesión temporal):
+#   AWS_SESSION_TOKEN
+
+on:
+  workflow_dispatch:
+    inputs:
+      vpc_octet:
+        description: Octeto X en 10.X.0.0/16
+        required: true
+        type: string
+        default: "42"
+
+jobs:
+  ea2-cloud-lab:
+    uses: ORG_O_USER/AUY1104-SharedWorkflows/.github/workflows/ea2-provision-cloud-lab.yaml@EA2
+    with:
+      aws_region: us-east-1
+      instance_type: t3.medium
+      vpc_octet: ${{ inputs.vpc_octet }}
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      EA2_SSH_PRIVATE_KEY: ${{ secrets.EA2_SSH_PRIVATE_KEY }}

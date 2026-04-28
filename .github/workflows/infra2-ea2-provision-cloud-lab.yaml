@@ -1,0 +1,263 @@
+# EA2 · Laboratorio cloud (VPC + 2×k3s + NLB TCP + RDS + ECR + manifiestos)
+# - workflow_call: repos de alumnos con los mismos secretos AWS + EA2_SSH_PRIVATE_KEY.
+# - workflow_dispatch: desde este repo (ref actual) o EA2 si se invoca desde otro.
+#
+# El balanceador es un NLB (TCP). Un ALB clasico no reenvia NodePorts TCP arbitrarios.
+# DNS publico: usar el hostname del NLB o Route53 (inputs opcionales en Terraform).
+
+name: Provisionar EA2 cloud lab (Terraform + k3s + workloads)
+description: Provisiona un laboratorio cloud con VPC, 2x k3s, NLB TCP, RDS, ECR y manifiestos.
+
+on:
+  workflow_call:
+    inputs:
+      aws_region:
+        required: false
+        type: string
+        default: us-east-1
+      instance_type:
+        required: false
+        type: string
+        default: t3.medium
+      vpc_octet:
+        required: false
+        type: string
+        default: "42"
+      ssh_cidr_ipv4:
+        required: false
+        type: string
+        default: "0.0.0.0/0"
+      k8s_api_cidr_ipv4:
+        required: false
+        type: string
+        default: "0.0.0.0/0"
+      alb_nodeport_start:
+        required: false
+        type: string
+        default: "30080"
+      alb_nodeport_end:
+        required: false
+        type: string
+        default: "30100"
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_SESSION_TOKEN:
+        required: false
+      EA2_SSH_PRIVATE_KEY:
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        required: true
+        type: string
+        default: us-east-1
+      instance_type:
+        required: true
+        type: string
+        default: t3.medium
+      vpc_octet:
+        required: true
+        type: string
+        default: "42"
+      ssh_cidr_ipv4:
+        required: true
+        type: string
+        default: "0.0.0.0/0"
+      k8s_api_cidr_ipv4:
+        required: true
+        type: string
+        default: "0.0.0.0/0"
+      alb_nodeport_start:
+        required: true
+        type: string
+        default: "30080"
+      alb_nodeport_end:
+        required: true
+        type: string
+        default: "30100"
+
+jobs:
+  provision:
+    name: Terraform + k3s + kubectl
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      TF_IN_AUTOMATION: true
+
+    steps:
+      - name: Descargar infra (SharedWorkflows)
+        uses: actions/checkout@v4
+        with:
+          repository: asanchezo-duoc/AUY1104-SharedWorkflows
+          ref: ${{ github.repository == 'asanchezo-duoc/AUY1104-SharedWorkflows' && github.ref || 'EA2' }}
+
+      - name: Credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Clave SSH para Terraform
+        env:
+          PEM: ${{ secrets.EA2_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$PEM" > ~/.ssh/ea2_lab.pem
+          chmod 600 ~/.ssh/ea2_lab.pem
+          ssh-keygen -y -f ~/.ssh/ea2_lab.pem > ~/.ssh/ea2_lab.pub
+          echo "TF_VAR_public_key=$(cat ~/.ssh/ea2_lab.pub)" >> "$GITHUB_ENV"
+
+      - name: Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+
+      - name: terraform init
+        working-directory: infra/ea2-cloud-lab
+        run: terraform init
+
+      - name: terraform apply
+        working-directory: infra/ea2-cloud-lab
+        env:
+          TF_VAR_aws_region: ${{ inputs.aws_region }}
+          TF_VAR_instance_type: ${{ inputs.instance_type }}
+          TF_VAR_vpc_octet: ${{ inputs.vpc_octet }}
+          TF_VAR_ssh_cidr_ipv4: ${{ inputs.ssh_cidr_ipv4 }}
+          TF_VAR_k8s_api_cidr_ipv4: ${{ inputs.k8s_api_cidr_ipv4 }}
+          TF_VAR_alb_nodeport_start: ${{ inputs.alb_nodeport_start }}
+          TF_VAR_alb_nodeport_end: ${{ inputs.alb_nodeport_end }}
+        run: terraform apply -auto-approve
+
+      - name: Salidas Terraform
+        id: tf
+        working-directory: infra/ea2-cloud-lab
+        run: |
+          echo "server_pub=$(terraform output -raw k3s_server_public_ip)" >> "$GITHUB_OUTPUT"
+          echo "server_prv=$(terraform output -raw k3s_server_private_ip)" >> "$GITHUB_OUTPUT"
+          echo "agent_pub=$(terraform output -raw k3s_agent_public_ip)" >> "$GITHUB_OUTPUT"
+          echo "nlb=$(terraform output -raw nlb_dns_name)" >> "$GITHUB_OUTPUT"
+          echo "ecr=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "rds_primary=$(terraform output -raw rds_primary_endpoint)" >> "$GITHUB_OUTPUT"
+          echo "rds_replica=$(terraform output -raw rds_replica_endpoint)" >> "$GITHUB_OUTPUT"
+          echo "rds_user=$(terraform output -raw rds_master_username)" >> "$GITHUB_OUTPUT"
+
+      - name: Esperar SSH (server)
+        env:
+          IP: ${{ steps.tf.outputs.server_pub }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 40); do
+            if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 -o BatchMode=yes -i ~/.ssh/ea2_lab.pem "ubuntu@${IP}" 'echo ok'; then
+              exit 0
+            fi
+            echo "intento $i/40..."
+            sleep 15
+          done
+          exit 1
+
+      - name: Esperar SSH (agent)
+        env:
+          IP: ${{ steps.tf.outputs.agent_pub }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 40); do
+            if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 -o BatchMode=yes -i ~/.ssh/ea2_lab.pem "ubuntu@${IP}" 'echo ok'; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+
+      - name: Instalar k3s (server + agent)
+        env:
+          SERVER_PUB: ${{ steps.tf.outputs.server_pub }}
+          SERVER_PRV: ${{ steps.tf.outputs.server_prv }}
+          AGENT_PUB: ${{ steps.tf.outputs.agent_pub }}
+          NLB: ${{ steps.tf.outputs.nlb }}
+        run: |
+          set -euo pipefail
+          bash scripts/ea2-cloud-lab-install-k3s.sh ~/.ssh/ea2_lab.pem "$SERVER_PUB" "$SERVER_PRV" "$AGENT_PUB" "$NLB"
+
+      - name: Kubeconfig en el runner
+        env:
+          SERVER_PUB: ${{ steps.tf.outputs.server_pub }}
+        run: |
+          set -euo pipefail
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i ~/.ssh/ea2_lab.pem \
+            "ubuntu@${SERVER_PUB}:/etc/rancher/k3s/k3s.yaml" ./k3s.yaml
+          sed -i "s/127.0.0.1/${SERVER_PUB}/g" ./k3s.yaml
+          echo "KUBECONFIG=$PWD/k3s.yaml" >> "$GITHUB_ENV"
+
+      - name: Login ECR + build/push API
+        env:
+          ECR_URL: ${{ steps.tf.outputs.ecr }}
+          AWS_REGION: ${{ inputs.aws_region }}
+        run: |
+          set -euo pipefail
+          REGISTRY=$(echo "$ECR_URL" | cut -d/ -f1)
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+          docker build -t "${ECR_URL}:latest" k8s-manifests/ea2-cloud-lab/api
+          docker push "${ECR_URL}:latest"
+
+      - name: Secret ECR + RDS + despliegues
+        env:
+          ECR_URL: ${{ steps.tf.outputs.ecr }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          RDS_PRIMARY: ${{ steps.tf.outputs.rds_primary }}
+          RDS_REPLICA: ${{ steps.tf.outputs.rds_replica }}
+          RDS_USER: ${{ steps.tf.outputs.rds_user }}
+        working-directory: infra/ea2-cloud-lab
+        run: |
+          set -euo pipefail
+          REGISTRY=$(echo "$ECR_URL" | cut -d/ -f1)
+          kubectl create secret docker-registry ecr-pull \
+            --docker-server="$REGISTRY" \
+            --docker-username=AWS \
+            --docker-password="$(aws ecr get-login-password --region "$AWS_REGION")" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          DB_PASS="$(terraform output -raw rds_master_password)"
+          kubectl create secret generic ea2-rds-credentials \
+            --from-literal=DB_HOST="$RDS_PRIMARY" \
+            --from-literal=DB_REPLICA_HOST="$RDS_REPLICA" \
+            --from-literal=DB_USER="$RDS_USER" \
+            --from-literal=DB_PASSWORD="$DB_PASS" \
+            --from-literal=DB_NAME=labdb \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          sed "s|REPLACE_ECR_IMAGE|${ECR_URL}:latest|g" \
+            ../../k8s-manifests/ea2-cloud-lab/api/deployment.yaml | kubectl apply -f -
+          kubectl apply -f ../../k8s-manifests/ea2-cloud-lab/api/service.yaml
+          kubectl apply -f ../../k8s-manifests/ea2-cloud-lab/grafana/
+
+      - name: Resumen
+        env:
+          NLB: ${{ steps.tf.outputs.nlb }}
+          SERVER_PUB: ${{ steps.tf.outputs.server_pub }}
+          ECR_URL: ${{ steps.tf.outputs.ecr }}
+        run: |
+          {
+            echo "### EA2 cloud lab"
+            echo ""
+            echo "**NLB (TCP NodePorts):** \`$NLB\`"
+            echo "**API (ejemplo):** \`http://${NLB}:30080/db-primary\`"
+            echo "**Grafana:** \`http://${NLB}:30200\` (admin / LabEa2Grafana)"
+            echo "**SSH server:** \`ssh -i <pem> ubuntu@${SERVER_PUB}\`"
+            echo "**ECR API:** \`${ECR_URL}:latest\`"
+            kubectl get nodes -o wide || true
+            kubectl get svc,po -A || true
+          } >> "$GITHUB_STEP_SUMMARY"
