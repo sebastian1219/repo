@@ -12,7 +12,10 @@ on:
   workflow_dispatch:
     inputs:
       purge_mode:
-        description: Modo de limpieza
+        description: >
+          ea2-lab-tags = solo recursos del lab EA2 (script por tags/nombres).
+          cloud-nuke-region = borra casi TODO en la región (gruntwork cloud-nuke; sandbox).
+          "Full nuke" regional NO es ea2-lab-tags: elegí cloud-nuke-region.
         required: true
         type: choice
         options:
@@ -30,7 +33,10 @@ on:
         type: boolean
         default: true
       confirm_destroy:
-        description: Para borrar de verdad con dry_run=false escribe PURGE-EA2-LAB (modo ea2) o NUKE-REGION-FULL (modo cloud-nuke). Si dry_run=true, ignorado.
+        description: >
+          Solo si dry_run=false. Copiar el token EXACTO según modo (mayúsculas; sin comillas):
+          modo ea2-lab-tags → PURGE-EA2-LAB | modo cloud-nuke-region → NUKE-REGION-FULL.
+          Frases como "full nuke" no son válidas.
         required: false
         type: string
         default: ""
@@ -51,8 +57,10 @@ jobs:
           CONF: ${{ github.event.inputs.confirm_destroy }}
         run: |
           set -euo pipefail
-          if [[ "$DRY" == "false" ]] && [[ "$CONF" != "PURGE-EA2-LAB" ]]; then
-            echo "::error::Con dry_run=false debés escribir exactamente PURGE-EA2-LAB en confirm_destroy."
+          CONF_TRIM=$(echo -n "${CONF:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [[ "$DRY" == "false" ]] && [[ "$CONF_TRIM" != "PURGE-EA2-LAB" ]]; then
+            echo "::error::Modo ea2-lab-tags: con dry_run=false, confirm_destroy debe ser exactamente PURGE-EA2-LAB (recibido un valor distinto o vacío)."
+            echo "::notice::Para vaciar casi toda la región (cloud-nuke), no uses este modo: ejecutá de nuevo con purge_mode=cloud-nuke-region y confirm_destroy=NUKE-REGION-FULL."
             exit 1
           fi
 
@@ -86,8 +94,9 @@ jobs:
           CONF: ${{ github.event.inputs.confirm_destroy }}
         run: |
           set -euo pipefail
-          if [[ "$DRY" == "false" ]] && [[ "$CONF" != "NUKE-REGION-FULL" ]]; then
-            echo "::error::Modo cloud-nuke con dry_run=false requiere confirm_destroy = NUKE-REGION-FULL (cuenta sandbox)."
+          CONF_TRIM=$(echo -n "${CONF:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [[ "$DRY" == "false" ]] && [[ "$CONF_TRIM" != "NUKE-REGION-FULL" ]]; then
+            echo "::error::Modo cloud-nuke-region: con dry_run=false, confirm_destroy debe ser exactamente NUKE-REGION-FULL (cuenta sandbox)."
             exit 1
           fi
 
