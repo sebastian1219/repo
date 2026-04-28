@@ -125,10 +125,14 @@ jobs:
       - name: cloud-nuke (dry-run o force)
         env:
           DRY: ${{ github.event.inputs.dry_run }}
+          DISABLE_TELEMETRY: "1"
         run: |
           set -euo pipefail
+          # Voclabs / AWS Academy: política Pvoclabs suele tener explicit deny sobre
+          # lambda:DeleteFunction en funciones del lab (p.ej. ModLabRole).
+          EXCL=(--exclude-resource-type lambda --exclude-resource-type lambda-layer)
           if [[ "$DRY" == "true" ]]; then
-            cloud-nuke aws --region "$AWS_REGION" --dry-run
+            cloud-nuke aws --region "$AWS_REGION" --dry-run "${EXCL[@]}"
           else
-            cloud-nuke aws --region "$AWS_REGION" --force
+            cloud-nuke aws --region "$AWS_REGION" --force "${EXCL[@]}"
           fi
