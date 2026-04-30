@@ -117,3 +117,7 @@ jobs:
       - name: 3 · Deploy to AWS K3S
         run: |
           ssh -o StrictHostKeyChecking=accept-new "ubuntu@${{ inputs.k3s-server-public-ip }}" 'kubectl apply -f -' < k8s/demo.yaml
+
+      - name: 4 · Verify Deployment
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new "ubuntu@${{ inputs.k3s-server-public-ip }}" 'kubectl get pods'
