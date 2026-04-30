@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────
+# Receta compartida: “empaquetar la app y dejarla en Docker Hub”
+# Otros repositorios pueden llamarla sin copiar todo el script.
+# ─────────────────────────────────────────────────────────────
+
+name: Testing de Codigo y Docker Build
+
+on:
+  # Cuando otro repo te “llama” y te pasa nombre de imagen, tag y secretos
+  workflow_call:
+  # Ejecución manual desde GitHub → Actions → Run workflow (mismos inputs que vía workflow_call)
+  workflow_dispatch:
+
+jobs:
+  # Etapa 1 · Instalar dependencias y ejecutar tests (si falla, no se construye ni publica la imagen)
+  deps-and-test:
+    name: Dependencies and tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1 · Descargar el código del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2 · Instalar dependencias
+        run: npm install
+
+      - name: 3 · Ejecutar tests
+        run: npm test
+
+      - name: 4 · Build de imagen Docker
+        run: |
+          # Nombre completo en Docker Hub: tu-usuario/nombre-de-la-imagen
+          IMAGEN_COMPLETA="juanito/pedrito"
+
+          # Una sola construcción, dos etiquetas: la de esta versión y "latest" (la última)
+          docker build \
+            -t "${IMAGEN_COMPLETA}:v9.9.9" \
+            -t "${IMAGEN_COMPLETA}:latest" \
+            .
