@@ -96,8 +96,9 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: 1 · Login to AWS K3S
-        run: |
-          echo ${{ secrets.EA2_SSH_PRIVATE_KEY }} > $HOME/.ssh/ea2_lab.pem
-          chmod 600 $HOME/.ssh/ea2_lab.pem
-          ssh -i $HOME/.ssh/ea2_lab.pem -o StrictHostKeyChecking=accept-new "ubuntu@${{ inputs.k3s-server-public-ip }}" 'echo ok'
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EA2_SSH_PRIVATE_KEY }}
+
+      - name: 1 · SSH al servidor K3S
+        run: ssh -o StrictHostKeyChecking=accept-new "ubuntu@${{ inputs.k3s-server-public-ip }}" 'echo ok'
