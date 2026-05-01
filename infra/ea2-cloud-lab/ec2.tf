@@ -22,8 +22,8 @@ resource "aws_instance" "k3s" {
   }
 
   tags = {
-    Name    = "ea2-k3s-${count.index + 1}"
+    Name    = "ea2-vm-${count.index == 0 ? "a" : "b"}"
     Purpose = "AUY1104-EA2-cloud-lab"
-    Role    = count.index == 0 ? "k3s-server" : "k3s-agent"
+    Role    = count.index == 0 ? "vm-a" : "vm-b"
   }
 }

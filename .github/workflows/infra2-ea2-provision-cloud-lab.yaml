@@ -1,4 +1,4 @@
-# EA2 · Laboratorio cloud (VPC + 2×k3s + NLB TCP + RDS + ECR + manifiestos)
+# EA2 · Laboratorio cloud (VPC + 2 MV k3s autocontenido + NLB TCP + RDS + ECR + manifiestos)
 # - workflow_call: repos de alumnos con los mismos secretos AWS + EA2_SSH_PRIVATE_KEY.
 # - workflow_dispatch: desde este repo (ref actual) o EA2 si se invoca desde otro.
 #
@@ -8,7 +8,7 @@
 # AMI + AZ: mismos data sources que infra/ea2-sandbox-vm (receta ea2-provision-k8s-sandbox.yaml).
 
 name: INFRA2 - Provisionar EA2 cloud lab (Terraform + k3s + workloads) (local)
-description: Provisiona un laboratorio cloud con VPC, 2x k3s, NLB TCP, RDS, ECR y manifiestos.
+description: VPC, 2 MV Ubuntu misma instalación k3s (sandbox), NLB TCP, RDS, ECR, manifiestos.
 
 on:
   workflow_call:
@@ -145,18 +145,17 @@ jobs:
         id: tf
         working-directory: infra/ea2-cloud-lab
         run: |
-          echo "server_pub=$(terraform output -raw k3s_server_public_ip)" >> "$GITHUB_OUTPUT"
-          echo "server_prv=$(terraform output -raw k3s_server_private_ip)" >> "$GITHUB_OUTPUT"
-          echo "agent_pub=$(terraform output -raw k3s_agent_public_ip)" >> "$GITHUB_OUTPUT"
+          echo "vm_a_pub=$(terraform output -raw vm_a_public_ip)" >> "$GITHUB_OUTPUT"
+          echo "vm_b_pub=$(terraform output -raw vm_b_public_ip)" >> "$GITHUB_OUTPUT"
           echo "nlb=$(terraform output -raw nlb_dns_name)" >> "$GITHUB_OUTPUT"
           echo "ecr=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
           echo "rds_primary=$(terraform output -raw rds_primary_endpoint)" >> "$GITHUB_OUTPUT"
           echo "rds_replica=$(terraform output -raw rds_replica_endpoint)" >> "$GITHUB_OUTPUT"
           echo "rds_user=$(terraform output -raw rds_master_username)" >> "$GITHUB_OUTPUT"
 
-      - name: Esperar SSH (server)
+      - name: Esperar SSH (VM A)
         env:
-          IP: ${{ steps.tf.outputs.server_pub }}
+          IP: ${{ steps.tf.outputs.vm_a_pub }}
         run: |
           set -euo pipefail
           for i in $(seq 1 40); do
@@ -170,9 +169,9 @@ jobs:
           done
           exit 1
 
-      - name: Esperar SSH (agent)
+      - name: Esperar SSH (VM B)
         env:
-          IP: ${{ steps.tf.outputs.agent_pub }}
+          IP: ${{ steps.tf.outputs.vm_b_pub }}
         run: |
           set -euo pipefail
           for i in $(seq 1 40); do
@@ -185,26 +184,34 @@ jobs:
           done
           exit 1
 
-      - name: Instalar k3s (server + agent)
+      # Misma instalación k3s que ea2-provision-k8s-sandbox.yaml (step "Instalar stack Kubernetes", rama k3s), repetida por MV.
+      - name: Instalar k3s (2× igual que sandbox)
         env:
-          SERVER_PUB: ${{ steps.tf.outputs.server_pub }}
-          SERVER_PRV: ${{ steps.tf.outputs.server_prv }}
-          AGENT_PUB: ${{ steps.tf.outputs.agent_pub }}
-          NLB: ${{ steps.tf.outputs.nlb }}
+          VM_A_PUB: ${{ steps.tf.outputs.vm_a_pub }}
+          VM_B_PUB: ${{ steps.tf.outputs.vm_b_pub }}
         run: |
           set -euo pipefail
-          bash scripts/ea2-cloud-lab-install-k3s.sh ~/.ssh/ea2_lab.pem "$SERVER_PUB" "$SERVER_PRV" "$AGENT_PUB" "$NLB"
+          k3s_sandbox_install() {
+            PUBLIC_IP=${1:?ip}
+            REMOTE='ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/ea2_lab.pem ubuntu@'"$PUBLIC_IP"
+            # --tls-san IP publica: igual comentario que sandbox (cert vs elastic IP).
+            $REMOTE "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=\"--write-kubeconfig-mode 644 --tls-san ${PUBLIC_IP}\" sh -"
+            $REMOTE 'sudo kubectl get nodes || true'
+          }
+          k3s_sandbox_install "$VM_A_PUB"
+          k3s_sandbox_install "$VM_B_PUB"
 
       - name: Kubeconfig en el runner
         env:
-          SERVER_PUB: ${{ steps.tf.outputs.server_pub }}
+          VM_A_PUB: ${{ steps.tf.outputs.vm_a_pub }}
         run: |
           set -euo pipefail
+          # kubectl apply del job usa cluster en VM A (misma convención: primera MV).
           scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=120 \
             -i ~/.ssh/ea2_lab.pem \
-            "ubuntu@${SERVER_PUB}:/etc/rancher/k3s/k3s.yaml" ./k3s.yaml
-          sed -i "s/127.0.0.1/${SERVER_PUB}/g" ./k3s.yaml
+            "ubuntu@${VM_A_PUB}:/etc/rancher/k3s/k3s.yaml" ./k3s.yaml
+          sed -i "s/127.0.0.1/${VM_A_PUB}/g" ./k3s.yaml
           echo "KUBECONFIG=$PWD/k3s.yaml" >> "$GITHUB_ENV"
 
       - name: Login ECR + build/push API
@@ -252,7 +259,8 @@ jobs:
       - name: Resumen
         env:
           NLB: ${{ steps.tf.outputs.nlb }}
-          SERVER_PUB: ${{ steps.tf.outputs.server_pub }}
+          VM_A_PUB: ${{ steps.tf.outputs.vm_a_pub }}
+          VM_B_PUB: ${{ steps.tf.outputs.vm_b_pub }}
           ECR_URL: ${{ steps.tf.outputs.ecr }}
         run: |
           {
@@ -261,7 +269,8 @@ jobs:
             echo "**NLB (TCP NodePorts):** \`$NLB\`"
             echo "**API (ejemplo):** \`http://${NLB}:30080/db-primary\`"
             echo "**Grafana:** \`http://${NLB}:30200\` (admin / LabEa2Grafana)"
-            echo "**SSH server:** \`ssh -i <pem> ubuntu@${SERVER_PUB}\`"
+            echo "**SSH VM A:** \`ssh -i <pem> ubuntu@${VM_A_PUB}\`"
+            echo "**SSH VM B:** \`ssh -i <pem> ubuntu@${VM_B_PUB}\`"
             echo "**ECR API:** \`${ECR_URL}:latest\`"
             kubectl get nodes -o wide || true
             kubectl get svc,po -A || true

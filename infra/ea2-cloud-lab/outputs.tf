@@ -13,24 +13,24 @@ output "public_endpoint_hint" {
   description = "Referencia rapida"
 }
 
-output "k3s_server_public_ip" {
+output "vm_a_public_ip" {
   value       = aws_instance.k3s[0].public_ip
-  description = "IP publica del nodo k3s server (SSH / kubeconfig)"
+  description = "IP publica MV A (misma EC2 index 0; k3s autocontenido)"
 }
 
-output "k3s_server_private_ip" {
+output "vm_a_private_ip" {
   value       = aws_instance.k3s[0].private_ip
-  description = "IP privada del server (agent -> apiserver)"
+  description = "IP privada MV A"
 }
 
-output "k3s_agent_public_ip" {
+output "vm_b_public_ip" {
   value       = aws_instance.k3s[1].public_ip
-  description = "IP publica del nodo k3s agent"
+  description = "IP publica MV B (misma EC2 index 1; k3s autocontenido)"
 }
 
-output "k3s_agent_private_ip" {
+output "vm_b_private_ip" {
   value       = aws_instance.k3s[1].private_ip
-  description = "IP privada del agent"
+  description = "IP privada MV B"
 }
 
 output "ssh_user" {
