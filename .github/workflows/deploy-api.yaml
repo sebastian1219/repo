@@ -103,7 +103,7 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new "ubuntu@${{ inputs.k3s-server-public-ip }}" 'sudo rm -rf /tmp/k8s-deploy'
           scp -o StrictHostKeyChecking=accept-new -r k8s "ubuntu@${{ inputs.k3s-server-public-ip }}:/tmp/k8s-deploy"
           ssh -o StrictHostKeyChecking=accept-new "ubuntu@${{ inputs.k3s-server-public-ip }}" \
-            'sudo k3s kubectl apply -R --validate=false -f /tmp/k8s-deploy/'
+            'sudo k3s kubectl apply -R -f /tmp/k8s-deploy/'
 
 
           ssh -o StrictHostKeyChecking=accept-new "ubuntu@${{ inputs.k3s-server-public-ip }}" \
