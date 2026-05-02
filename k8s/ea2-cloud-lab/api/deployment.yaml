@@ -18,7 +18,7 @@ spec:
         - name: ecr-pull
       containers:
         - name: api
-          image: REPLACE_ECR_IMAGE
+          image: sebastianvargas/demo-api:v1.0.0
           ports:
             - containerPort: 8080
           envFrom:
